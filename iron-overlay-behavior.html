@@ -241,6 +241,10 @@ context. You should place this element as a child of `<body>` whenever possible.
       this.__shouldRemoveTabIndex = false;
       // Used for wrapping the focus on TAB / Shift+TAB.
       this.__firstFocusableNode = this.__lastFocusableNode = null;
+      // Used for requestAnimationFrame when opened changes.
+      this.__openChangedAsync = null;
+      // Used for requestAnimationFrame when iron-resize is fired.
+      this.__onIronResizeAsync = null;
       this._ensureSetup();
     },
 
@@ -318,32 +322,44 @@ context. You should place this element as a child of `<body>` whenever possible.
       }
 
       this.__isAnimating = true;
-      
+
       if (this.opened) {
-        this._prepareRenderOpened();
+        this._manager.addOverlay(this);
+        if (this.withBackdrop) {
+          this.backdropElement.prepare();
+        }
       } else {
         this._manager.removeOverlay(this);
       }
 
-      this._manager.trackBackdrop(this);
-
-      if (this._openChangedAsync) {
-        this.cancelAsync(this._openChangedAsync);
+      // requestAnimationFrame for non-blocking rendering
+      if (this.__openChangedAsync) {
+        cancelAnimationFrame(this.__openChangedAsync);
       }
-      // Async here to allow overlay layer to become visible.
-      this._openChangedAsync = this.async(function() {
-        // overlay becomes visible here
-        this.style.display = '';
-        // Force layout to ensure transition will go. Set offsetWidth to itself
-        // so that compilers won't remove it.
-        this.offsetWidth = this.offsetWidth;
+      this.__openChangedAsync = requestAnimationFrame(function() {
+        this.__openChangedAsync = null;
+        this._manager.trackBackdrop(this);
         if (this.opened) {
-          this._renderOpened();
+          this._prepareRenderOpened();
+          // Allow overlay layer to become visible
+          this.__openChangedAsync = requestAnimationFrame(function() {
+            this.__openChangedAsync = null;
+            this.__ensureDisplay();
+            this._renderOpened();
+          }.bind(this));
         } else {
+          this.__ensureDisplay();
           this._renderClosed();
         }
-        this._openChangedAsync = null;
-      }, 1);
+      }.bind(this));
+    },
+
+    __ensureDisplay: function () {
+      // overlay becomes visible here
+      this.style.display = '';
+      // Force layout to ensure transition will go. Set offsetWidth to itself
+      // so that compilers won't remove it.
+      this.offsetWidth = this.offsetWidth;
     },
 
     _canceledChanged: function() {
@@ -377,17 +393,11 @@ context. You should place this element as a child of `<body>` whenever possible.
     // tasks which must occur before opening; e.g. making the element visible
     _prepareRenderOpened: function() {
 
-      this._manager.addOverlay(this);
-
       // Needed to calculate the size of the overlay so that transitions on its size
       // will have the correct starting points.
       this._preparePositioning();
       this.refit();
       this._finishPositioning();
-
-      if (this.withBackdrop) {
-        this.backdropElement.prepare();
-      }
 
       // Safari will apply the focus to the autofocus element when displayed for the first time,
       // so we blur it. Later, _applyFocus will set the focus if necessary.
@@ -479,12 +489,15 @@ context. You should place this element as a child of `<body>` whenever possible.
     },
 
     _onIronResize: function() {
-      if (this.__isAnimating) {
-        return;
+      if (this.__onIronResizeAsync) {
+        cancelAnimationFrame(this.__onIronResizeAsync);
+        this.__onIronResizeAsync = null;
       }
-
-      if (this.opened) {
-        this.refit();
+      if (this.opened && !this.__isAnimating) {
+        this.__onIronResizeAsync = requestAnimationFrame(function() {
+          this.__onIronResizeAsync = null;
+          this.refit();
+        }.bind(this));
       }
     },
 

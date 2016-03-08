@@ -118,9 +118,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 
     <script>
       function runAfterOpen(overlay, callback) {
-        overlay.addEventListener('iron-overlay-opened', function() {
-          Polymer.Base.async(callback, 1);
-        });
+        overlay.addEventListener('iron-overlay-opened', callback);
         overlay.open();
       }
 
